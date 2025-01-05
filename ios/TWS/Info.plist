@@ -25,6 +25,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Bluetooth access is required to connect to TWS devices.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Bluetooth access is required to connect to TWS devices.</string>
+
 	<dict>
 	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
 		<key>NSAllowsArbitraryLoads</key>

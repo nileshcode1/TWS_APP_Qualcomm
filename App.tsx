@@ -1,117 +1,171 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
   View,
+  Text,
+  Button,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  PermissionsAndroid,
+  Platform,
+  Alert,
+  NativeEventEmitter,
+  NativeModules,
 } from 'react-native';
+import BleManager from 'react-native-ble-manager';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
-
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
+interface BluetoothDevice {
+  id: string;
+  name?: string;
 }
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+const App = () => {
+  const [scanning, setScanning] = useState(false);
+  const [devices, setDevices] = useState<BluetoothDevice[]>([]);
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  useEffect(() => {
+    // Start BLE Manager
+    BleManager.start({showAlert: false});
+
+    const eventEmitter = new NativeEventEmitter(NativeModules.BleManager);
+
+    const handleDiscoverPeripheral = (device: BluetoothDevice) => {
+      console.log('Discovered device:', device);
+      setDevices(prevDevices => {
+        if (!prevDevices.some(d => d.id === device.id)) {
+          return [...prevDevices, device];
+        }
+        return prevDevices;
+      });
+    };
+
+    const discoverPeripheralListener = eventEmitter.addListener(
+      'BleManagerDiscoverPeripheral',
+      handleDiscoverPeripheral,
+    );
+
+    return () => {
+      discoverPeripheralListener.remove();
+    };
+  }, []);
+
+  const requestPermissions = async () => {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      ]);
+
+      if (
+        granted['android.permission.BLUETOOTH_SCAN'] !== 'granted' ||
+        granted['android.permission.BLUETOOTH_CONNECT'] !== 'granted' ||
+        granted['android.permission.ACCESS_FINE_LOCATION'] !== 'granted'
+      ) {
+        console.error('Bluetooth permissions not granted');
+        Alert.alert('Error', 'Bluetooth permissions are required.');
+      }
+    }
   };
 
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+  useEffect(() => {
+    requestPermissions();
+  }, []);
+
+  const startScan = () => {
+    if (scanning) return;
+
+    setDevices([]);
+    setScanning(true);
+
+    BleManager.scan([], 10, true)
+      .then(() => {
+        console.log('Scanning started...');
+      })
+      .catch(error => {
+        console.error('Scan failed:', error);
+        setScanning(false);
+      });
+
+    setTimeout(() => {
+      setScanning(false);
+    }, 10000);
+  };
+
+  const handleConnect = (id: string) => {
+    BleManager.connect(id)
+      .then(() => {
+        Alert.alert('Success', `Connected to device: ${id}`);
+        console.log(`Connected to device: ${id}`);
+      })
+      .catch(error => {
+        Alert.alert('Error', `Could not connect to device: ${id}`);
+        console.error(error);
+      });
+  };
+
+  const renderItem = ({item}: {item: BluetoothDevice}) => (
+    <TouchableOpacity
+      style={styles.deviceItem}
+      onPress={() => handleConnect(item.id)}>
+      <Text style={styles.deviceName}>{item.name || 'Unnamed Device'}</Text>
+      <Text style={styles.deviceId}>{item.id}</Text>
+    </TouchableOpacity>
   );
-}
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Bluetooth Device Scanner</Text>
+      <Button
+        title={scanning ? 'Scanning...' : 'Start Scan'}
+        onPress={startScan}
+        disabled={scanning}
+      />
+      <FlatList<BluetoothDevice>
+        data={devices}
+        keyExtractor={item => item.id}
+        renderItem={renderItem}
+        ListEmptyComponent={() => (
+          <Text style={styles.emptyList}>
+            {scanning ? 'Scanning for devices...' : 'No devices found.'}
+          </Text>
+        )}
+      />
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#f5f5f5',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  deviceItem: {
+    padding: 12,
+    marginVertical: 8,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    elevation: 2,
   },
-  highlight: {
-    fontWeight: '700',
+  deviceName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deviceId: {
+    fontSize: 14,
+    color: '#888',
+  },
+  emptyList: {
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 16,
+    color: '#aaa',
   },
 });
 
