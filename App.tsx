@@ -71,7 +71,7 @@ const App = () => {
   useEffect(() => {
     requestPermissions();
   }, []);
-
+//new
   const startScan = () => {
     if (scanning) return;
 
